@@ -66,6 +66,9 @@ class Edge():
         self.attr_value = attr_value
 
 
+def get_attribute_values(A):
+    pass
+
 def get_best_attribute(attrs):
     i = 0                                  
     attr = list(attrs[i].keys())[0]    
@@ -81,8 +84,22 @@ def get_majority_label(label):
     ind = freq.index(max_value)
     return label[ind]
  
-def information_gain():
+ def entropy(S):
     pass
+ 
+def information_gain(S, A):
+    '''
+    A : attribute
+    
+    Information gain of an attribute A is the expected reduction 
+    in entropy (expected increase of purity) caused by partitioning 
+    on this attribute
+    '''
+    E = entropy(S)
+    sum_V = 0
+    
+    for v in A:
+    
 
 def majority_error():
     pass
@@ -94,31 +111,29 @@ def gini_index():
 def ID3(max_depth, S, attrs, label, edge_attr=None):
     global tree, attributes
 
-    if len(set(label)) == 1:                    # return leaf node w. label
+    if len(set(label)) == 1: # return leaf node w. label
         leaf = Node(leaf_label=label[0])
         return leaf
-    
-    elif len(attrs) < 1:                        # return leaf node w. most common label
+    elif len(attrs) < 1: # return leaf node w. most common label
         leaf = Node(leaf_label=get_majority_label(label))
         return leaf
-    
     else:
         # find attribute that best splits S
         A, A_values = get_best_attribute(attrs)
         root_node = Node(splitting_attr=A)
-        root_index = tree.add_node(node=root_node)          # create root node for tree
+        root_index = tree.add_node(node=root_node) # create root node for tree
         
-        for v in A_values:                                  # add new tree branch corresponding to A=v            
+        for v in A_values: # add new tree branch corresponding to A=v            
             # Sv be subset of examples in S w. A=v
             inds = [i for i in range(len(S)) if S[i][A]==v]            
             Sv = [S[x] for x in inds]
             label_v = [label[x] for x in inds]
             
-            if len(Sv) < 1:                     # add leaf node w. most common value of label in S 
+            if len(Sv) < 1: # add leaf node w. most common value of label in S 
                 leaf_node = Node(leaf_label=get_majority_label(label))
                 leaf_index = tree.add_node(node=leaf_node)
                 tree.add_edge(leaf_index, root_index, edge_attr=v)
-            else:                               # below this branch add the subtree ID3(Sv, attrs-{A}, label)
+            else: # below this branch add the subtree ID3(Sv, attrs-{A}, label)
                 node = ID3(max_depth, Sv, copy.deepcopy(attrs), label_v, edge_attr=v)
                 subtree_index = tree.add_node(node=node)
                 tree.add_edge(subtree_index, root_index, edge_attr=v)
