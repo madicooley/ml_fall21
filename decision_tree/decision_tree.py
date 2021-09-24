@@ -69,13 +69,18 @@ class Edge():
 def get_attribute_values(A):
     pass
 
-def get_best_attribute(attrs):
-    i = 0                                  
-    attr = list(attrs[i].keys())[0]    
-    attr_vals = attrs[i][attr]
+
+def get_best_attribute(S, labels, attrs, attr_selection):
+    #i = 0                                  
+    #attr = list(attrs[i].keys())[0]    
+    #attr_vals = attrs[i][attr]
+    
+    if attr_selection=='info_gain':
+        i = information_gain(S, attrs)
     
     del attrs[i]
     return attr, list(attr_vals) 
+
 
 def get_majority_label(label):
     unique = sorted(set(label))
@@ -83,23 +88,48 @@ def get_majority_label(label):
     max_value = max(freq)
     ind = freq.index(max_value)
     return label[ind]
- 
- def entropy(S):
-    pass
- 
-def information_gain(S, A):
+
+
+def entropy(S):
     '''
-    A : attribute
+    Entropy(S) = H(S) = -p_+ * log(p_+) - p_- * log(p_-)
+    
+    • The proportion of positive examples is p_+
+    • The proportion of negative examples is p_-
+    '''
+    pass
+
+ 
+def information_gain(S, attrs):
+    '''
+    S       : data subset
+    attrs   : list of attributes
     
     Information gain of an attribute A is the expected reduction 
     in entropy (expected increase of purity) caused by partitioning 
     on this attribute
+    
+    Entropy of partitioning the data is calculated by weighing the 
+    entropy of each partition by its size relative to the original set
     '''
-    E = entropy(S)
-    sum_V = 0
+    print('---computing info gain: \n', attrs)
+    print(S)
     
-    for v in A:
+    E_S = entropy(S)
+    S_len = len(S)
+    opt_attr_index = None 
     
+    for A in attrs:
+        for key, values in A.items():
+            sum_v = 0
+            for v in values:
+                print(key, v)
+                Sv = [x for x in S if x[key]==v]
+                Sv_len = len(Sv)
+                E_Sv = entropy(Sv)
+                
+                sum_v += (Sv_len/S_len)*E_Sv
+            
 
 def majority_error():
     pass
@@ -108,18 +138,18 @@ def gini_index():
     pass
 
 
-def ID3(max_depth, S, attrs, label, edge_attr=None):
+def ID3(max_depth, S, attrs, labels, attr_selection, edge_attr=None):
     global tree, attributes
 
-    if len(set(label)) == 1: # return leaf node w. label
-        leaf = Node(leaf_label=label[0])
+    if len(set(labels)) == 1: # return leaf node w. label
+        leaf = Node(leaf_label=labels[0])
         return leaf
     elif len(attrs) < 1: # return leaf node w. most common label
-        leaf = Node(leaf_label=get_majority_label(label))
+        leaf = Node(leaf_label=get_majority_label(labels))
         return leaf
     else:
         # find attribute that best splits S
-        A, A_values = get_best_attribute(attrs)
+        A, A_values = get_best_attribute(S, labels, attrs, attr_selection)
         root_node = Node(splitting_attr=A)
         root_index = tree.add_node(node=root_node) # create root node for tree
         
@@ -127,13 +157,13 @@ def ID3(max_depth, S, attrs, label, edge_attr=None):
             # Sv be subset of examples in S w. A=v
             inds = [i for i in range(len(S)) if S[i][A]==v]            
             Sv = [S[x] for x in inds]
-            label_v = [label[x] for x in inds]
+            label_v = [labels[x] for x in inds]
             
             if len(Sv) < 1: # add leaf node w. most common value of label in S 
-                leaf_node = Node(leaf_label=get_majority_label(label))
+                leaf_node = Node(leaf_label=get_majority_label(labels))
                 leaf_index = tree.add_node(node=leaf_node)
                 tree.add_edge(leaf_index, root_index, edge_attr=v)
-            else: # below this branch add the subtree ID3(Sv, attrs-{A}, label)
+            else: # below this branch add the subtree ID3(Sv, attrs-{A}, labels)
                 node = ID3(max_depth, Sv, copy.deepcopy(attrs), label_v, edge_attr=v)
                 subtree_index = tree.add_node(node=node)
                 tree.add_edge(subtree_index, root_index, edge_attr=v)
@@ -151,14 +181,15 @@ def problem_two():
     x_test, y_test = utils.readin_dat('decision_tree/data/car/', 'test.csv')
     
     global attributes
-    attributes = [{0 : set()}, # 'buying'
-                  {1 : set()}, # 'maint' 
-                  {2 : set()}, # 'doors'
-                  {3 : set()}, # 'persons'
-                  {4 : set()}, # 'lug_boot'
-                  {5 : set()}] # 'safety'
+    #attributes = [{0 : set()}, # 'buying'
+                  #{1 : set()}, # 'maint' 
+                  #{2 : set()}, # 'doors'
+                  #{3 : set()}, # 'persons'
+                  #{4 : set()}, # 'lug_boot'
+                  #{5 : set()}] # 'safety'
                   
     attributes = [{0 : set()}, {1 : set()}]
+    attr_selection = ['info_gain'] # add others
     
     for x in x_train:
         i=0
@@ -172,7 +203,7 @@ def problem_two():
     tree = Tree()
     
     max_depth = 1
-    ID3(max_depth, x_train, copy.deepcopy(attributes), y_train)
+    ID3(max_depth, x_train, copy.deepcopy(attributes), y_train, attr_selection[0])
     
     tree.print_tree()
     
