@@ -1,121 +1,73 @@
 '''
 
-- we have 6 car attributes
-- the label is the evaluation of the car
-- all the attributes are categorical
-- the training data consist of 1,000 examples
-- the test data comprise 728 examples
-
 '''
 
 import sys, copy, statistics
 import numpy as np
+import pandas as pd
 
 from os.path import dirname,realpath
 sys.path.insert(0, dirname(realpath(__file__))[:-13])
 
 import utils.utils as utils
+import utils.tree as tree
 
 
-class Tree():
-    def __init__(self):
-        self.adjacency_list = []
-    
-    def add_node(self, node=None):
-        if node.index is None:
-            self.adjacency_list.append(node)
-            node.index = len(self.adjacency_list)-1
-        return node.index
-    
-    def add_edge(self, child_index, parent_index, edge_attr=None):
-        edge = Edge(child_index, attr_value=edge_attr)
-        self.adjacency_list[parent_index].children.append(edge)
-    
-    def make_prediction(self, x):
-        y_hat = None
-        i = 0
-        
-        while True:
-            node = self.adjacency_list[i]
-            
-            if len(node.children) <= 0:
-                y_hat = node.leaf_label
-                break
-                
-            x_attr_value = x[node.splitting_attr]            
-            for child in node.children:
-                if child.attr_value == x_attr_value:
-                    i = child.child_node
-        return y_hat
-                
-    
-    def print_tree(self):
-        print('\n--------------------------------------tree:')
-        i=0
-        for node in self.adjacency_list:
-            print(i, ': ', end='')
-            node.print_node()
-            print()
-            i+=1
-        print('--------------------------------------')
-
-
-class Node():
-    def __init__(self, splitting_attr=None, leaf_label=None):
-        self.index = None
-        self.splitting_attr = splitting_attr        # splitting attr value 
-        self.leaf_label = leaf_label                # leaf_label
-        self.children = []
-    
-    def print_node(self):
-        print('___________________')
-        print('node index= ', self.index)
-        #print('parent node = ', self.parent)
-        print('splitting atrr=', self.splitting_attr)
-        print('leaf label=', self.leaf_label)
-        print('children: [', end='')
-        for child in self.children:
-            print('(', child.child_node, child.attr_value, ') , ', end='')
-        print(' ]\n______________________\n')
-        
-        
-class Edge():
-    def __init__(self, child_node, attr_value=None):
-        self.child_node = child_node
-        self.attr_value = attr_value
-
-
-def get_error(X, Y, tree):
+def get_error(df, tree):    
+    n = df.shape[0]
     miss_predictions = 0
     i=0
-    for x in X:
+    for index, x in df.iterrows():
         y_hat = tree.make_prediction(x)
         if y_hat is None:
             print('ERROR')
             
-        if y_hat != Y[i]:
+        if y_hat != df['y'][i]:
             miss_predictions+=1
         i+=1
     
-    return miss_predictions/len(X)
+    return miss_predictions/n
         
- 
-def get_attr_instances(S, labels, v, key):
-    '''
-    key : attribute index
-    v : attribute value
-    
-    returns list of labels of samples with attr=v
-    '''
-    S_inds = [i for i in range(len(S)) if S[i][key]==v]
-    Sv = [S[x] for x in S_inds]
-    labels_S = [labels[x] for x in S_inds]
-    
-    return Sv, labels_S
-    
 
-def max_gain_attr(S, labels, attrs, attr_selection):
-    S_measure = get_attr_measure(labels, attr_selection)
+def compute_fractional_feat(S, attr, values, nan_row_ind):
+    values = {x for x in values if x==x}
+    label = S['y'][nan_row_ind]    
+    S_len = len(S)-1
+    
+    sum_v = 0
+    for attr_value in values:
+        Sv = S[S[attr]==attr_value]
+        Sv_len = len(Sv)
+        Sv_prime = Sv_len + (Sv_len/S_len)
+        
+        num_pos = len(Sv[Sv['y'] == '+']) 
+        num_neg = len(Sv[Sv['y'] == '-']) 
+        
+        if label == '+':
+            c_neg = num_neg
+            c_pos = num_pos + (Sv_len/S_len)
+        elif label == '-':
+            c_neg = num_neg + (Sv_len/S_len)
+            c_pos = num_pos
+        
+        if c_pos != 0:
+            pos = -((c_pos/Sv_prime)*np.log2((c_pos/Sv_prime)))
+        else:
+            pos = 0
+            
+        if c_neg != 0:
+            neg = - ((c_neg/Sv_prime)*np.log2((c_neg/Sv_prime)))
+        else:
+            neg = 0
+            
+        frac_entrpy = pos + neg
+        
+        sum_v += (Sv_prime/S_len) * frac_entrpy
+    return sum_v
+    
+  
+def max_gain_attr(S, attrs, attr_selection):    
+    S_measure = get_attr_measure(S['y'].tolist(), attr_selection)
     S_len = len(S)
     
     max_gain = 0
@@ -123,22 +75,30 @@ def max_gain_attr(S, labels, attrs, attr_selection):
     i = 0
     
     for A in attrs:
-        for key, values in A.items():
+        for attr, values in A.items():
+            nan_vals = False
+            nan_row_inds = list(S.loc[pd.isna(S[attr]), :].index)
+            if len(nan_row_inds) > 0:
+                nan_vals=True
+            
             sum_v = 0
-            for v in values:                
-                Sv, labels_Sv = get_attr_instances(S, labels, v, key)
-                Sv_len = len(Sv)
-                
-                if Sv_len > 0:
-                    # when a sample has label
-                    Sv_measure = get_attr_measure(labels_Sv, attr_selection)
-                    sum_v += (Sv_len/S_len)*Sv_measure
-                else:
-                    # when a label is missing
-                    pass
+            if not nan_vals:
+                for attr_value in values:  
+                    Sv = S[S[attr]==attr_value]
+                    Sv_len = len(Sv)
+                    
+                    if Sv_len > 0:
+                        # when a sample has label
+                        Sv_measure = get_attr_measure(Sv['y'].tolist(), attr_selection)
+                        sum_v += (Sv_len/S_len)*Sv_measure
+            else:
+                sum_v = compute_fractional_feat(S, attr, values, nan_row_inds[0]) # NOTE know theres only one for now
                 
         gain = S_measure - sum_v
-        
+        #print('\n$Gain(S, A={}) = H(S)-\\sum_{{v\in vals(A)}}\\frac{{|S_v|}}{{|S|}} = {} - {}={}$'.format(attr, 
+                                                                                                          #round(S_measure, 3), 
+                                                                                                          #round(sum_v, 3), 
+                                                                                                          #round(gain, 3)))
         if gain>max_gain:
             max_gain=gain
             split_attr_i=i
@@ -148,6 +108,8 @@ def max_gain_attr(S, labels, attrs, attr_selection):
     attr_vals = attrs[split_attr_i][attr]
     del attrs[split_attr_i]
     
+    #print('\nChosen splitting $A \\text{=}', end='')
+    #print('{}$'.format(attr))
     return attr, list(attr_vals) 
 
 
@@ -178,9 +140,9 @@ def entropy(labels):
     entrpy = 0
     n = len(labels)
     values, counts = np.unique(sorted(labels), return_counts=True)
-
+    
     for c in counts:
-        entrpy -= (c/n)*np.log((c/n))
+        entrpy -= (c/n)*np.log2((c/n))
 
     return entrpy
     
@@ -227,209 +189,203 @@ def gini_index(labels):
     return GI_S
 
 
-def ID3(max_depth, S, attrs, labels, attr_selection, edge_attr=None, unknown_as_missing=False):
-    global tree, attributes
-            
+def ID3(S, attrs, attr_selection, max_depth, edge_attr=None):
+    global d_tree
+    
+    #print('\n____________________________________________________________________\nS: ')
+    #print(S)
+    #print('\nA: ', end='')
+    #for a in attrs:
+        #print(' ', list(a.keys())[0], end='')
+    #print()
+    
+    labels = S['y'].tolist()
     if max_depth <= 0:
         attrs = []
 
     if len(set(labels)) == 1: 
         # return leaf node w. label
-        leaf = Node(leaf_label=labels[0])
+        leaf = tree.Node(leaf_label=labels[0])
         return leaf
-    elif len(attrs) < 1:
+    elif len(attrs) <= 1:
         # return leaf node w. most common label
-        leaf = Node(leaf_label=get_majority_label(labels))
+        leaf = tree.Node(leaf_label=get_majority_label(labels))
         return leaf
     else:
         # find attribute that best splits S
-        A, A_values = max_gain_attr(S, labels, attrs, attr_selection)
-        root_node = Node(splitting_attr=A)
-        root_index = tree.add_node(node=root_node) # create root node for tree
+        attr, A_values = max_gain_attr(S, attrs, attr_selection)
+        A_values = {x for x in A_values if x==x}
         
-        for v in A_values:
-            # add new tree branch corresponding to A=v            
-            Sv, label_v = get_attr_instances(S, labels, v, A)
+        root_node = tree.Node(splitting_attr=attr)
+        root_index = d_tree.add_node(node=root_node) # create root node for tree
+        
+        for attr_value in A_values:
+            # add new tree branch corresponding to A=v    
+            Sv = S[(S[attr]==attr_value) | (S[attr].isna())]
             
             if len(Sv) < 1: 
                 # add leaf node w. most common value of label in S 
-                leaf_node = Node(leaf_label=get_majority_label(labels))
-                leaf_index = tree.add_node(node=leaf_node)
-                tree.add_edge(leaf_index, root_index, edge_attr=v)
+                leaf_node = tree.Node(leaf_label=get_majority_label(labels))
+                leaf_index = d_tree.add_node(node=leaf_node)
+                d_tree.add_edge(leaf_index, root_index, edge_attr=attr_value)
             else: 
                 # below this branch add the subtree ID3(Sv, attrs-{A}, labels)
-                node = ID3(max_depth-1, Sv, copy.deepcopy(attrs), label_v, attr_selection, edge_attr=v)
-                subtree_index = tree.add_node(node=node)
-                tree.add_edge(subtree_index, root_index, edge_attr=v)
-        
+                node = ID3(Sv, copy.deepcopy(attrs), attr_selection, max_depth-1, edge_attr=attr_value)
+                subtree_index = d_tree.add_node(node=node)
+                d_tree.add_edge(subtree_index, root_index, edge_attr=attr_value)
+                
         return root_node
 
-
-def problem_two():
-    '''
-        Decision Tree Practice - problem 2
-    '''
-    attr_selection = ['info_gain', 'maj_error', 'gini_ind']
-    
-    #x_train, y_train = utils.readin_dat('decision_tree/data/car/', 'train.csv')
-    x_train, y_train = utils.readin_dat('decision_tree/data/car/', 'shapes_dat.csv')
-    x_test, y_test = utils.readin_dat('decision_tree/data/car/', 'test.csv')
-    
-    global attributes
-    #attributes = [{0 : set()}, # 'buying'
-                  #{1 : set()}, # 'maint' 
-                  #{2 : set()}, # 'doors'
-                  #{3 : set()}, # 'persons'
-                  #{4 : set()}, # 'lug_boot'
-                  #{5 : set()}] # 'safety'
-                  
-    #attributes = [{i : set()} for i in range(1,7)]
-    attributes = [{0 : set()}, {1 : set()}]
-    
-    for x in x_train:
-        i=0
-        for attr in x:
-            k = list(attributes[i].keys())[0]
-            attributes[i][k].add(attr)
-            i+=1
-    print(attributes, '\n')
-    
-    for max_depth in range(1, 7):
-        for attr_slct in attr_selection:
-            global tree
-            tree = Tree()
-            
-            ID3(max_depth, x_train, copy.deepcopy(attributes), y_train, attr_slct)
-            #tree.print_tree()
-            
-            train_error = get_error(x_train, y_train, tree)
-            print('training error: ', train_error, attr_slct, max_depth)
     
 
-def problem_three():
-    '''
-        Decision Tree Practice - problem 3
-    '''
-    attr_selection = ['info_gain', 'maj_error', 'gini_ind']
-    
-    x_train_a, y_train = utils.readin_dat('decision_tree/data/bank/', 'train.csv')
-    x_test_a, y_test = utils.readin_dat('decision_tree/data/bank/', 'test.csv')
-    
-    x_train_b = copy.deepcopy(x_train_a)
-    x_test_b = copy.deepcopy(x_test_a)
-    
-    global attributes
+##############################################################################################
+
+def preprocess_pd(df, numeric_features=False, most_common=False, most_label=False, unknown_missing=False):      
     attributes = []
+    col_names = list(df.columns)
     
-    all_attribute_vals = []
-    for i in range(16):
-        all_attribute_vals.append({i : []})
+    if col_names[-1] != 'y':
+        df.rename( {col_names[-1] : 'y'})
+        col_names = list(df.columns)
         
-    for x in x_train_a:
-        i=0
-        for attr in x:
-            k = list(all_attribute_vals[i].keys())[0]
-            if attr.isnumeric():
-                attr = int(attr)
-            elif len(attr.split('-')) > 1:
-                if attr.split('-')[1].isnumeric():
-                    attr = int(attr)                
-            all_attribute_vals[i][k].append(attr)
-            i+=1
-    
-    ## preprocess input data for part a
+    # convert numeric features to bool using threshold
+    if numeric_features:        
+        for col in col_names:
+            if df[col].dtype == 'int64':
+                median = df[col].median()
+                for index, val in df[col].items():
+                    if val<= median:
+                        df.iloc[index, col]='less'
+                    else:
+                        df.iloc[index, col]='more'
+        
     i=0
-    for attr in all_attribute_vals:
-        l = list(attr.values())[0]
-        if isinstance(l[0], int):
-            sorted_values = sorted(l)
-            med = statistics.median(sorted_values)
-            attributes.append({i : {"less", "greater"}})
-            
-            for j in range(len(x_train_a)):
-                if int(x_train_a[j][i]) <= med:
-                    x_train_a[j][i] = "less"
-                else:
-                    x_train_a[j][i] = "greater"
-                    
-            for j in range(len(x_test_a)):
-                if int(x_test_a[j][i]) <= med:
-                    x_test_a[j][i] = "less"
-                else:
-                    x_test_a[j][i] = "greater"
-        else:
-            attributes.append({i : set(l)})
+    for col in col_names:
+        if col != 'y':
+            attributes.append({col : set(df[col].unique()) })
         i+=1
     
-    ############ 3.a
-    print('Max Depth & & Measure 1 & & Measure 2 & & Measure 3 //')
-    print(' & train & test & train & test & train & test //')
-    for max_depth in range(1, 17):
+    # fill in missing sample feature values
+    if unknown_missing or most_common or most_label:
+        for col in col_names:
+            missing = list(df.loc[pd.isna(df[col]), :].index)
+            
+            if unknown_missing:  # append unknown indices to missing list
+                unknwn = df.index[df[col]=='unknown'].tolist()
+                missing = missing + unknwn
+            
+            for miss in missing: 
+                val_counts = None
+                
+                # fill missing feature values w. most common val in that column
+                if most_common:
+                    val_counts = [[val, count] for val, count in df[col].value_counts().items() if val!='unknown']
+                    
+                # fill missing feature vals. w. most common among same labels
+                elif most_label:    
+                    missing_label = df['y'][miss]                
+                    df_sub = df[df['y']==missing_label][col]
+                    val_counts = [[val, count] for val, count in df_sub.value_counts().items() if val!='unknown']
+                    
+                fill_value = val_counts[0][0]
+                df[col][miss] = fill_value
+            
+    return attributes
+
+
+def tests(dataset, attr_selection, most_common=False, most_label=False):
+    '''
+        1. show data subsets S
+        2. attributes A
+        3. info gain calculation
+        4. how you split the data
+    '''
+    global d_tree
+    d_tree = tree.Tree()
+    attr_names=None
+    df_train=None
+    df_test=None
+    
+    if dataset=='boolean':
+        attr_names = {0 : 'x_1', 1 : 'x_2', 2 : 'x_3', 3 : 'x_4', 4 : 'y'}
+        df_train = utils.readin_dat_pd('decision_tree/data/tests/', 'bool_train.csv', columns=attr_names)
+    elif dataset=='tennis_full':
+        attr_names = {0 : 'outlook', 1 : 'temperature', 2 : 'humidity', 3 : 'wind', 4 : 'y'}
+        df_train = utils.readin_dat_pd('decision_tree/data/tests/', 'tennis_train.csv', columns=attr_names)
+    elif dataset=='tennis_missing':
+        attr_names = {0 : 'outlook', 1 : 'temperature', 2 : 'humidity', 3 : 'wind', 4 : 'y'}
+        df_train = utils.readin_dat_pd('decision_tree/data/tests/', 'tennis_train_missing.csv', columns=attr_names)
+    
+    attributes = preprocess_pd(df_train, most_common=most_common, most_label=most_label)
+    
+    ID3(df_train, attributes, attr_selection, 5)
+    
+    #train_error = get_error(df_train, d_tree)
+    d_tree.print_tree()
+
+
+def run_exps(df_train, df_test, attr_selection, depth_iters, numeric_features=False, unknown_missing=False, most_common=True):
+    attributes = preprocess_pd(df_train, numeric_features=numeric_features, 
+                               unknown_missing=unknown_missing, most_common=most_common)
+    
+    preprocess_pd(df_test, numeric_features=numeric_features, 
+                  unknown_missing=unknown_missing, most_common=most_common)
+    
+    print('Max Depth & & Info Gain & & Maj Error & & Gini Ind \\\\')
+    print(' & train & test & train & test & train & test \\\\')
+    for max_depth in range(1, depth_iters+1):
         print(max_depth, ' & ', end='')
         for attr_slct in attr_selection:
-            global tree
-            tree = Tree()
-            ID3(max_depth, x_train_a, copy.deepcopy(attributes), y_train, attr_slct)
-            
-            train_error = get_error(x_train_a, y_train, tree)
-            test_error = get_error(x_test_a, y_test, tree)
-            
-            print(train_error, ' & ', test_error, ' & ', end='')
-        print(' //') 
-            
-            
-    ############ 3.b
-    ## preprocess input data for part b
-    i=0
-    for attr in all_attribute_vals:
-        l = list(attr.values())[0]
-        if isinstance(l[0], int):
-            sorted_values = sorted(l)
-            med = statistics.median(sorted_values)
-            attributes.append({i : {"less", "greater"}})
-            
-            for j in range(len(x_train_b)):
-                if int(x_train_b[j][i]) <= med:
-                    x_train_b[j][i] = "less"
-                else:
-                    x_train_b[j][i] = "greater"
-                    
-            for j in range(len(x_test_b)):
-                if int(x_test_b[j][i]) <= med:
-                    x_test_b[j][i] = "less"
-                else:
-                    x_test_b[j][i] = "greater"
-        else:
-            attributes.append({i : set(l)})
-        i+=1       
-            
-            
-    print('Max Depth & & Measure 1 & & Measure 2 & & Measure 3 //')
-    print(' & train & test & train & test & train & test //')
-    for max_depth in range(1, 17):
-        print(max_depth, end='')
-        for attr_slct in attr_selection:
-            global tree
-            tree = Tree()
-            ID3(max_depth, x_train_b, copy.deepcopy(attributes), y_train, attr_slct, unknown_as_missing=True)
-            
-            train_error = get_error(x_train_b, y_train, tree)
-            test_error = get_error(x_test_b, y_test, tree)
-            
-            print(train_error, test_error, end='')
-        print(' //') 
-            
+            global d_tree
+            d_tree = tree.Tree()
 
+            ID3(df_train, copy.deepcopy(attributes), attr_slct, max_depth)
+            
+            train_error = get_error(df_train, d_tree)
+            test_error = get_error(df_test, d_tree)
+            
+            print(round(train_error,3), ' & ', round(test_error, 3), ' & ', end='')
+        print(' \\\\') 
+    
+    
 def main():
-    #problem_two()
-    problem_three()
+    attr_selection = ['info_gain', 'maj_error', 'gini_ind']
+    
+    #tests('boolean', 'info_gain') 
+    #tests('boolean', 'maj_error')
+    #tests('boolean', 'gini_ind')
+    
+    #tests('tennis_full', 'info_gain')
+    #tests('tennis_full', 'maj_error')
+    #tests('tennis_full', 'gini_ind')
+    
+    #tests('tennis_missing', 'info_gain', most_common=True)
+    #tests('tennis_missing', 'info_gain', most_label=True)
+    #tests('tennis_missing', 'info_gain')  
+    
+    df_train_car = utils.readin_dat_pd('decision_tree/data/car/', 'train.csv')
+    df_test_car = utils.readin_dat_pd('decision_tree/data/car/', 'test.csv')
+    
+    df_train_bank_a = utils.readin_dat_pd('decision_tree/data/bank/', 'train.csv')
+    df_test_bank_a = utils.readin_dat_pd('decision_tree/data/bank/', 'test.csv')
+    
+    df_train_bank_b = utils.readin_dat_pd('decision_tree/data/bank/', 'train.csv')
+    df_test_bank_b = utils.readin_dat_pd('decision_tree/data/bank/', 'test.csv')
+    
+    ####### Decision Tree Practice - problem 2
+    print('\n-----------------------------Problem 2b. Output: ')
+    run_exps(df_train_car, df_test_car, attr_selection, 6)
+    
+    ####### Decision Tree Practice - problem 3
+    print('\n\n-----------------------------Problem 3a. Output: ')
+    run_exps(df_train_bank_a, df_test_bank_a, attr_selection, 16, numeric_features=True)
+    
+    print('\n\n-----------------------------Problem 3b. Output: ')
+    run_exps(df_train_bank_a, df_test_bank_a, attr_selection, 16, 
+             numeric_features=True, unknown_missing=True, most_common=True)
 
 
 if __name__=="__main__":
     main()
-    
-    
-    
-    
     
     
