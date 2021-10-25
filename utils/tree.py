@@ -17,7 +17,7 @@ class Tree():
         edge = Edge(child_index, attr_value=edge_attr)
         self.adjacency_list[parent_index].children.append(edge)
     
-    def make_prediction(self, x):
+    def make_prediction(self, x):       
         y_hat = None
         i = 0
         
@@ -44,7 +44,7 @@ class Tree():
             print()
             i+=1
         print('--------------------------------------')
-
+    
 
 class Node():
     def __init__(self, splitting_attr=None, leaf_label=None):

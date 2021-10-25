@@ -1,2 +1,2 @@
 #!/bin/sh
-python decision_tree/decision_tree.py 
+python hw1.py 
