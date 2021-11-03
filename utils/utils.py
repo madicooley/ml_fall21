@@ -1,6 +1,50 @@
 
 import math
 import pandas as pd
+import numpy as np
+
+
+def shuffle_dat_np(X, y):
+    pass
+
+
+def readin_dat_np(directory, fname, neg_lab=False):
+    '''
+    
+    Parameters
+    ----------
+    directory : TYPE
+        DESCRIPTION.
+    fname : TYPE
+        DESCRIPTION.
+    neg_lab : TYPE, optional
+        DESCRIPTION. The default is False. True if labels should be 
+                    converted to {-1, +1}
+
+    Returns
+    -------
+    X : numpy array
+        DESCRIPTION.
+    y : numpy array
+        DESCRIPTION.
+
+    '''
+    dat = np.loadtxt(directory+fname, dtype=float, delimiter=',')
+    n = dat.shape[0]
+    
+    # X = dat[: , 0:-1]
+    # y = dat[: , -1]
+    # if neg_lab:
+    #     for i in range(len(y)):
+    #         if y[i] == 0:
+    #             y[i] = -1
+    # return X, y
+    
+    if neg_lab: 
+        for i in range(n):
+            if dat[i, -1] == 0:
+                dat[i, -1] = -1
+    return dat
 
 
 def readin_dat_pd(directory, fname, columns=None):
